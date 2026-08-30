@@ -31,7 +31,7 @@ func main() {
 		fmt.Print("> ")
 		in, err := buf.ReadString('\n')
 		if err != nil {
-			log.Printf("encountered error reading input: %w", err)
+			log.Printf("encountered error reading input: %s", err.Error())
 		}
 
 		_, err = udpConn.Write([]byte(in))

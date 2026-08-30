@@ -26,7 +26,7 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Printf("could not start connection: %w\n", err)
+			fmt.Printf("could not start connection: %s\n", err.Error())
 		}
 
 		fmt.Println("Connection has been accepted from", conn.RemoteAddr())
