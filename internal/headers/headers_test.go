@@ -14,7 +14,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
 
@@ -40,7 +40,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 34, n)
 	assert.False(t, done)
 
@@ -50,7 +50,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 34, n)
 	assert.False(t, done)
 
@@ -58,7 +58,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "with the mostest", headers["Hostest"])
+	assert.Equal(t, "with the mostest", headers["hostest"])
 	assert.Equal(t, 27, n)
 	assert.False(t, done)
 
@@ -68,7 +68,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 34, n)
 	assert.False(t, done)
 
@@ -76,7 +76,7 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "with the mostest", headers["Hostest"])
+	assert.Equal(t, "with the mostest", headers["hostest"])
 	assert.Equal(t, 27, n)
 	assert.False(t, done)
 
@@ -86,4 +86,26 @@ func TestHeadersParse(t *testing.T) {
 	require.NotNil(t, headers)
 	assert.Equal(t, 2, n)
 	assert.True(t, done)
+
+	// Test: Invalid single header with invalid chars
+	headers = NewHeaders()
+	data = []byte("H©st:     localhost:42069       \r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.Error(t, err)
+
+	// Test: Multiple values per key
+	headers = NewHeaders()
+	data = []byte("Set-person: me\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "me", headers["set-person"])
+	data = []byte("Set-person: not me\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "me, not me", headers["set-person"])
+	data = []byte("Set-person: other me\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "me, not me, other me", headers["set-person"])
+
 }
