@@ -28,7 +28,7 @@ func main() {
 			fmt.Printf("could not start connection: %s\n", err.Error())
 		}
 
-		fmt.Println("Connection has been accepted from", conn.RemoteAddr(), "\n")
+		fmt.Printf("Connection has been accepted from %s\n\n", conn.RemoteAddr())
 
 		req, err := request.RequestFromReader(conn)
 		if err != nil {
