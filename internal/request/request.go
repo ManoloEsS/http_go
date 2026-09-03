@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/ManoloEsS/http_go/internal/headers"
 )
 
 // Parsed request from stream
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	state       requestState
 }
 
@@ -32,6 +35,7 @@ type requestState int
 const (
 	initialized requestState = iota
 	done
+	parsingHeaders
 )
 
 // main function to parse a request struct from a reader
@@ -39,7 +43,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buff := make([]byte, bufferSize)
 	readToIndex := 0
 	req := &Request{
-		state: initialized,
+		state:   initialized,
+		Headers: headers.NewHeaders(),
 	}
 
 	for req.state != done {
@@ -49,7 +54,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			buff = newBuff
 		}
 
-		pos, err := reader.Read(buff[readToIndex:])
+		numBytesRead, err := reader.Read(buff[readToIndex:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				req.state = done
@@ -58,7 +63,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 
-		readToIndex += pos
+		readToIndex += numBytesRead
 
 		consumed, err := req.parse(buff[:readToIndex])
 		if err != nil {
@@ -75,6 +80,21 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 // Request method for parsing the stream
 func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.state != done {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += n
+		if n == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.state {
 	case done:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
@@ -88,12 +108,24 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *req
-		r.state = done
+		r.state = parsingHeaders
 		return consumed, nil
+
+	case parsingHeaders:
+		n, headersDone, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+
+		if headersDone {
+			r.state = done
+		}
+		return n, nil
 
 	default:
 		return 0, fmt.Errorf("error: unknown state")
 	}
+
 }
 
 // helper function to parse the request line from the read bytes
