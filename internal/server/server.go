@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"sync/atomic"
+
+	"github.com/ManoloEsS/http_go/internal/response"
 )
 
 type Server struct {
@@ -12,7 +14,7 @@ type Server struct {
 	listener net.Listener
 }
 
-var response = []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello World!\n")
+var resp = []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello World!\n")
 
 func Serve(port int) (*Server, error) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -58,6 +60,12 @@ func (s *Server) listen() {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
-	conn.Write(response)
-	return
+	err := response.WriteStatusLine(conn, 200)
+	if err != nil {
+		return
+	}
+	err = response.WriteHeaders(conn, response.GetDefaultHeaders(0))
+	if err != nil {
+		return
+	}
 }
