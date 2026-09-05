@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/ManoloEsS/http_go/internal/headers"
@@ -14,6 +15,7 @@ import (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	state       requestState
 }
 
@@ -36,6 +38,7 @@ const (
 	initialized requestState = iota
 	done
 	parsingHeaders
+	parsingBody
 )
 
 // main function to parse a request struct from a reader
@@ -54,13 +57,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			buff = newBuff
 		}
 
-		numBytesRead, err := reader.Read(buff[readToIndex:])
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				req.state = done
-				break
-			}
-			return nil, err
+		numBytesRead, readErr := reader.Read(buff[readToIndex:])
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, readErr
 		}
 
 		readToIndex += numBytesRead
@@ -72,6 +71,13 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if consumed > 0 {
 			copy(buff, buff[consumed:])
 			readToIndex -= consumed
+		}
+
+		if errors.Is(readErr, io.EOF) {
+			if req.state == done {
+				break
+			}
+			return nil, errors.New("request is truncated")
 		}
 	}
 
@@ -118,14 +124,37 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 		}
 
 		if headersDone {
-			r.state = done
+			r.state = parsingBody
 		}
 		return n, nil
+
+	case parsingBody:
+		contentLen, ok := r.Headers.Get("Content-Length")
+		if !ok {
+			r.state = done
+			return 0, nil
+		}
+
+		lengthInt, err := strconv.Atoi(contentLen)
+		if err != nil {
+			return 0, errors.New("invalid content length")
+		}
+
+		r.Body = append(r.Body, data...)
+
+		if len(r.Body) > lengthInt {
+			return len(data), fmt.Errorf("content length does not match actual body length: %d", len(r.Body))
+		}
+
+		if len(r.Body) == lengthInt {
+			r.state = done
+		}
+
+		return len(data), nil
 
 	default:
 		return 0, fmt.Errorf("error: unknown state")
 	}
-
 }
 
 // helper function to parse the request line from the read bytes
@@ -173,8 +202,5 @@ func validMethod(s string) bool {
 }
 
 func validVersion(s string) bool {
-	if s != "1.1" {
-		return false
-	}
-	return true
+	return s == "1.1"
 }

@@ -43,6 +43,10 @@ func main() {
 		for k, v := range req.Headers {
 			fmt.Printf("- %s: %s\n", k, v)
 		}
+		fmt.Println()
+
+		fmt.Println("Body:")
+		fmt.Printf("%s\n\n", string(req.Body))
 
 		fmt.Println("Connection has been closed to", conn.RemoteAddr())
 	}
