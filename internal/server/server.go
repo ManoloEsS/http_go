@@ -12,6 +12,8 @@ import (
 	"github.com/ManoloEsS/http_go/internal/response"
 )
 
+type Handler func(w io.Writer, req *request.Request) *HandlerError
+
 type Server struct {
 	closed   atomic.Bool
 	listener net.Listener
@@ -19,19 +21,17 @@ type Server struct {
 }
 
 type HandlerError struct {
-	statusCode response.StatusCode
-	message    string
+	StatusCode response.StatusCode
+	Message    string
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
-
-func writeError(w io.Writer, handlerError HandlerError) {
-	err := response.WriteStatusLine(w, handlerError.statusCode)
+func (hErr *HandlerError) WriteError(w io.Writer) {
+	err := response.WriteStatusLine(w, hErr.StatusCode)
 	if err != nil {
 		log.Printf("could not respond with error: %v", err)
 	}
 
-	messageBytes := []byte(handlerError.message)
+	messageBytes := []byte(hErr.Message)
 
 	err = response.WriteHeaders(w, response.GetDefaultHeaders(len(messageBytes)))
 	if err != nil {
@@ -94,30 +94,36 @@ func (s *Server) handle(conn net.Conn) {
 
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		writeError(conn, HandlerError{
-			statusCode: 400,
-			message:    "Bad Request",
-		})
+		handlerError := &HandlerError{
+			StatusCode: 400,
+			Message:    "Bad Request",
+		}
+		handlerError.WriteError(conn)
 		return
 	}
 
 	var buff bytes.Buffer
 
-	err = s.handler(conn, req)
-	if err != nil {
-		writeError(conn, HandlerError{
-			statusCode: 500,
-			message:    "Internal Server Error",
-		})
+	handlerErr := s.handler(&buff, req)
+	if handlerErr != nil {
+		handlerErr.WriteError(conn)
 		return
 	}
 
-	err = response.WriteStatusLine(buff, 200)
+	err = response.WriteStatusLine(conn, 200)
 	if err != nil {
+		log.Println("error writing response status line")
 		return
 	}
-	err = response.WriteHeaders(conn, response.GetDefaultHeaders(0))
+	err = response.WriteHeaders(conn, response.GetDefaultHeaders(buff.Len()))
 	if err != nil {
+		log.Println("error response writing headers")
+		return
+	}
+
+	_, err = buff.WriteTo(conn)
+	if err != nil {
+		log.Println("error writing response body")
 		return
 	}
 }
