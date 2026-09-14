@@ -48,11 +48,17 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("invalid header name, contains invalid chars: %s", key)
 	}
 
-	h.Set(key, value)
+	h.Append(key, value)
 	return n, false, nil
 }
 
 func (h Headers) Set(key, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
+
+}
+
+func (h Headers) Append(key, value string) {
 	key = strings.ToLower(key)
 	if v, ok := h[key]; ok {
 		value = fmt.Sprintf("%s, %s", v, value)

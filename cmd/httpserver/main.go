@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -10,32 +8,58 @@ import (
 	"syscall"
 
 	"github.com/ManoloEsS/http_go/internal/request"
+	"github.com/ManoloEsS/http_go/internal/response"
 	"github.com/ManoloEsS/http_go/internal/server"
 )
 
 const port = 42069
 
-func test_handler(w io.Writer, req *request.Request) *server.HandlerError {
-	if req.RequestLine.RequestTarget == "/yourproblem" {
-		return &server.HandlerError{
-			StatusCode: http.StatusBadRequest,
-			Message:    "Your problem is not my problem\n",
-		}
-	}
+const badRequest = `<html>
+  <head>
+    <title>400 Bad Request</title>
+  </head>
+  <body>
+    <h1>Bad Request</h1>
+    <p>Your request honestly kinda sucked.</p>
+  </body>
+</html>`
 
-	if req.RequestLine.RequestTarget == "/myproblem" {
-		return &server.HandlerError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Woopsie, my bad\n",
-		}
-	}
+const internalServerError = `<html>
+  <head>
+    <title>500 Internal Server Error</title>
+  </head>
+  <body>
+    <h1>Internal Server Error</h1>
+    <p>Okay, you know what? This one is on me.</p>
+  </body>
+</html>`
 
-	_, err := fmt.Fprintf(w, "All good, frfr\n")
-	if err != nil {
-		log.Println("could not write body to response")
-	}
+const successResponse = `<html>
+  <head>
+    <title>200 OK</title>
+  </head>
+  <body>
+    <h1>Success!</h1>
+    <p>Your request was an absolute banger.</p>
+  </body>
+</html>`
 
-	return nil
+func test_handler(writer *response.Writer, req *request.Request) {
+	switch req.RequestLine.RequestTarget {
+	case "/yourproblem":
+		_ = writer.WriteStatusLine(http.StatusBadRequest)
+		_ = writer.WriteHeaders(response.GetDefaultHeaders(len(badRequest), "text/html"))
+		_, _ = writer.WriteBody([]byte(badRequest))
+
+	case "/myproblem":
+		_ = writer.WriteStatusLine(http.StatusInternalServerError)
+		_ = writer.WriteHeaders(response.GetDefaultHeaders(len(internalServerError), "text/html"))
+		_, _ = writer.WriteBody([]byte(internalServerError))
+	default:
+		_ = writer.WriteStatusLine(http.StatusOK)
+		_ = writer.WriteHeaders(response.GetDefaultHeaders(len(successResponse), "text/html"))
+		_, _ = writer.WriteBody([]byte(successResponse))
+	}
 }
 
 func main() {

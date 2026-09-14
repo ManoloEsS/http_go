@@ -12,7 +12,7 @@ import (
 	"github.com/ManoloEsS/http_go/internal/response"
 )
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 type Server struct {
 	closed   atomic.Bool
@@ -21,24 +21,30 @@ type Server struct {
 }
 
 type HandlerError struct {
-	StatusCode response.StatusCode
-	Message    string
+	StatusCode  response.StatusCode
+	Message     string
+	ContentType string
 }
 
 func (hErr *HandlerError) WriteError(w io.Writer) {
-	err := response.WriteStatusLine(w, hErr.StatusCode)
+	writer := response.Writer{
+		Writer: w,
+	}
+	err := writer.WriteStatusLine(hErr.StatusCode)
 	if err != nil {
 		log.Printf("could not respond with error: %v", err)
 	}
 
 	messageBytes := []byte(hErr.Message)
 
-	err = response.WriteHeaders(w, response.GetDefaultHeaders(len(messageBytes)))
+	headers := response.GetDefaultHeaders(len(messageBytes), hErr.ContentType)
+
+	err = writer.WriteHeaders(headers)
 	if err != nil {
 		log.Printf("could not respond with error: %v\n", err)
 	}
 
-	n, err := response.WriteBody(w, messageBytes)
+	n, err := writer.WriteBody(messageBytes)
 	if err != nil {
 		log.Printf("could not respond with error: %v\n", err)
 	}
@@ -103,27 +109,20 @@ func (s *Server) handle(conn net.Conn) {
 	}
 
 	var buff bytes.Buffer
-
-	handlerErr := s.handler(&buff, req)
-	if handlerErr != nil {
-		handlerErr.WriteError(conn)
-		return
+	writer := &response.Writer{
+		Writer: &buff,
 	}
 
-	err = response.WriteStatusLine(conn, 200)
+	s.handler(writer, req)
+
+	_, err = io.Copy(conn, &buff)
 	if err != nil {
-		log.Println("error writing response status line")
-		return
-	}
-	err = response.WriteHeaders(conn, response.GetDefaultHeaders(buff.Len()))
-	if err != nil {
-		log.Println("error response writing headers")
+		handlerError := &HandlerError{
+			StatusCode: 500,
+			Message:    "Internal Server Error",
+		}
+		handlerError.WriteError(conn)
 		return
 	}
 
-	_, err = buff.WriteTo(conn)
-	if err != nil {
-		log.Println("error writing response body")
-		return
-	}
 }

@@ -18,7 +18,24 @@ const (
 
 const httpVersion = "HTTP/1.1"
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+type writerState int
+
+const (
+	empty = iota
+	statusLineDone
+	headersDone
+	bodyDone
+)
+
+type Writer struct {
+	Writer io.Writer
+	state  writerState
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.state != empty {
+		return fmt.Errorf("attempting to write status line in wrong order, writer state is: %v", w.state)
+	}
 	var reasonPhrase string
 
 	switch statusCode {
@@ -32,42 +49,52 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 		reasonPhrase = ""
 	}
 
-	_, err := fmt.Fprintf(w, "%s %d %s\r\n", httpVersion, statusCode, reasonPhrase)
+	_, err := fmt.Fprintf(w.Writer, "%s %d %s\r\n", httpVersion, statusCode, reasonPhrase)
 	if err != nil {
 		return err
 	}
+	w.state = statusLineDone
 	return nil
 }
 
-func GetDefaultHeaders(contentLen int) headers.Headers {
+func GetDefaultHeaders(contentLen int, contentType string) headers.Headers {
 	defaultHead := headers.NewHeaders()
 
-	defaultHead.Set("Content-Length", fmt.Sprintf("%d", contentLen))
-	defaultHead.Set("Connection", "close")
-	defaultHead.Set("Content-Type", "text/plain")
+	defaultHead.Append("Content-Length", fmt.Sprintf("%d", contentLen))
+	defaultHead.Append("Connection", "close")
+	defaultHead.Append("Content-Type", contentType)
 
 	return defaultHead
 }
 
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	if w.state != statusLineDone {
+		return fmt.Errorf("attempting to write headers in wrong order, writer state is: %v", w.state)
+	}
 	for k, v := range headers {
-		_, err := fmt.Fprintf(w, "%s: %s\r\n", k, v)
+		_, err := fmt.Fprintf(w.Writer, "%s: %s\r\n", k, v)
 		if err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprint(w, "\r\n")
+	_, err := fmt.Fprint(w.Writer, "\r\n")
 	if err != nil {
 		return err
 	}
 
+	w.state = headersDone
 	return nil
 }
 
-func WriteBody(w io.Writer, body []byte) (int, error) {
-	n, err := w.Write(body)
+func (w *Writer) WriteBody(body []byte) (int, error) {
+	if w.state != headersDone {
+		return 0, fmt.Errorf("attempting to write body in wrong order, writer state is: %v", w.state)
+	}
+	n, err := w.Writer.Write(body)
 	if err != nil {
 		return n, err
 	}
+
+	w.state = bodyDone
 	return n, nil
 }
