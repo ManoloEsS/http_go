@@ -69,9 +69,6 @@ func test_handler(writer *response.Writer, req *request.Request) {
 func proxy_handler(writer *response.Writer, req *request.Request) {
 	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
 		path := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/")
-		req.Headers.Remove("content-length")
-
-		req.Headers.Set("Transfer-Encoding", "chunked")
 
 		res, err := http.Get(fmt.Sprintf("%s/%s", "https://httpbingo.org", path))
 		if err != nil {
@@ -80,10 +77,13 @@ func proxy_handler(writer *response.Writer, req *request.Request) {
 			_, _ = writer.WriteBody([]byte("Not Found"))
 			return
 		}
+		defer res.Body.Close()
 
 		_ = writer.WriteStatusLine(response.StatusCode(200))
 		headers := response.GetDefaultHeaders(0, res.Header.Get("Content-Type"))
+		headers.Append("Transfer-Encoding", "chunked")
 		headers.Remove("content-length")
+
 		_ = writer.WriteHeaders(headers)
 
 		buff := make([]byte, 1024)
@@ -93,11 +93,16 @@ func proxy_handler(writer *response.Writer, req *request.Request) {
 			fmt.Printf("read: %d\n", n)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					chunkSize, _ := writer.WriteChunkedBody(buff[:n])
-					fmt.Printf("wrote chunk of size: %d\n", chunkSize)
-					done, _ := writer.WriteChunkedBodyDone()
-					fmt.Printf("done writing, end was %d bytes\n", done)
+					if len(buff[:n]) > 0 {
+						chunkSize, _ := writer.WriteChunkedBody(buff[:n])
+						fmt.Printf("wrote chunk of size: %d\n", chunkSize)
+					}
 				}
+				done, err := writer.WriteChunkedBodyDone()
+				if err != nil {
+					log.Printf("could not write ending chunk")
+				}
+				fmt.Printf("done writing, end was %d bytes\n", done)
 				return
 			}
 

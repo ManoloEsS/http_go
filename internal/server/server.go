@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -108,21 +107,9 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
-	var buff bytes.Buffer
 	writer := &response.Writer{
-		Writer: &buff,
+		Writer: conn,
 	}
 
 	s.handler(writer, req)
-
-	_, err = io.Copy(conn, &buff)
-	if err != nil {
-		handlerError := &HandlerError{
-			StatusCode: 500,
-			Message:    "Internal Server Error",
-		}
-		handlerError.WriteError(conn)
-		return
-	}
-
 }
