@@ -16,7 +16,10 @@ const (
 	internalServErr StatusCode = 500
 )
 
-const httpVersion = "HTTP/1.1"
+const (
+	httpVersion = "HTTP/1.1"
+	crlf        = "\r\n"
+)
 
 type writerState int
 
@@ -97,4 +100,27 @@ func (w *Writer) WriteBody(body []byte) (int, error) {
 
 	w.state = bodyDone
 	return n, nil
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	chunk := []byte{}
+
+	chunk = fmt.Append(chunk, fmt.Sprintf("%x\r\n", len(p)))
+	chunk = fmt.Append(chunk, fmt.Sprintf("%s", p))
+	chunk = fmt.Append(chunk, "\r\n")
+	n, err := w.Writer.Write(chunk)
+	if err != nil {
+		return n, err
+	}
+
+	return len(p), nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	n, err := w.Writer.Write([]byte("0\r\n\r\n"))
+	if err != nil {
+		return n, err
+	}
+	return n, nil
+
 }

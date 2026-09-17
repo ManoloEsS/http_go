@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/ManoloEsS/http_go/internal/request"
@@ -62,8 +66,59 @@ func test_handler(writer *response.Writer, req *request.Request) {
 	}
 }
 
+func proxy_handler(writer *response.Writer, req *request.Request) {
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
+		path := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin/")
+		req.Headers.Remove("content-length")
+
+		req.Headers.Set("Transfer-Encoding", "chunked")
+
+		res, err := http.Get(fmt.Sprintf("%s/%s", "https://httpbingo.org", path))
+		if err != nil {
+			_ = writer.WriteStatusLine(http.StatusNotFound)
+			_ = writer.WriteHeaders(response.GetDefaultHeaders(len("Not Found"), "text/html"))
+			_, _ = writer.WriteBody([]byte("Not Found"))
+			return
+		}
+
+		_ = writer.WriteStatusLine(response.StatusCode(200))
+		headers := response.GetDefaultHeaders(0, res.Header.Get("Content-Type"))
+		headers.Remove("content-length")
+		_ = writer.WriteHeaders(headers)
+
+		buff := make([]byte, 1024)
+
+		for {
+			n, err := res.Body.Read(buff)
+			fmt.Printf("read: %d\n", n)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					chunkSize, _ := writer.WriteChunkedBody(buff[:n])
+					fmt.Printf("wrote chunk of size: %d\n", chunkSize)
+					done, _ := writer.WriteChunkedBodyDone()
+					fmt.Printf("done writing, end was %d bytes\n", done)
+				}
+				return
+			}
+
+			written, err := writer.WriteChunkedBody(buff[:n])
+			if err != nil {
+				log.Printf("error writing chunk to client\n")
+				return
+			}
+			fmt.Printf("wrote chunk of size: %d\n", written)
+
+		}
+	}
+
+	_ = writer.WriteStatusLine(http.StatusNotFound)
+	_ = writer.WriteHeaders(response.GetDefaultHeaders(len("Not Found"), "text/html"))
+	_, _ = writer.WriteBody([]byte("Not Found"))
+
+}
+
 func main() {
-	server, err := server.Serve(port, test_handler)
+	server, err := server.Serve(port, proxy_handler)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

@@ -74,6 +74,11 @@ func (h Headers) Get(key string) (string, bool) {
 	return "", false
 }
 
+func (h Headers) Remove(key string) {
+	lowerKey := strings.ToLower(key)
+	delete(h, lowerKey)
+}
+
 func validFieldName(s string) bool {
 	if len(s) < 1 {
 		return false
