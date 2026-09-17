@@ -79,6 +79,12 @@ func (h Headers) Remove(key string) {
 	delete(h, lowerKey)
 }
 
+func (h Headers) Clear() {
+	for k := range h {
+		delete(h, k)
+	}
+}
+
 func validFieldName(s string) bool {
 	if len(s) < 1 {
 		return false

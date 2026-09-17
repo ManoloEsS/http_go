@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -8,9 +10,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
+	"github.com/ManoloEsS/http_go/internal/headers"
 	"github.com/ManoloEsS/http_go/internal/request"
 	"github.com/ManoloEsS/http_go/internal/response"
 	"github.com/ManoloEsS/http_go/internal/server"
@@ -80,13 +84,16 @@ func proxy_handler(writer *response.Writer, req *request.Request) {
 		defer res.Body.Close()
 
 		_ = writer.WriteStatusLine(response.StatusCode(200))
-		headers := response.GetDefaultHeaders(0, res.Header.Get("Content-Type"))
-		headers.Append("Transfer-Encoding", "chunked")
-		headers.Remove("content-length")
+		h := response.GetDefaultHeaders(0, res.Header.Get("Content-Type"))
+		h.Set("Transfer-Encoding", "chunked")
+		h.Append("Trailer", "X-Content-SHA256")
+		h.Append("Trailer", "X-Content-Length")
+		h.Remove("content-length")
 
-		_ = writer.WriteHeaders(headers)
+		_ = writer.WriteHeaders(h)
 
 		buff := make([]byte, 1024)
+		body := []byte{}
 
 		for {
 			n, err := res.Body.Read(buff)
@@ -94,6 +101,7 @@ func proxy_handler(writer *response.Writer, req *request.Request) {
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					if len(buff[:n]) > 0 {
+						body = append(body, buff[:n]...)
 						chunkSize, _ := writer.WriteChunkedBody(buff[:n])
 						fmt.Printf("wrote chunk of size: %d\n", chunkSize)
 					}
@@ -103,17 +111,29 @@ func proxy_handler(writer *response.Writer, req *request.Request) {
 					log.Printf("could not write ending chunk")
 				}
 				fmt.Printf("done writing, end was %d bytes\n", done)
-				return
+				break
 			}
 
+			body = append(body, buff[:n]...)
 			written, err := writer.WriteChunkedBody(buff[:n])
 			if err != nil {
 				log.Printf("error writing chunk to client\n")
-				return
+				break
 			}
 			fmt.Printf("wrote chunk of size: %d\n", written)
 
 		}
+
+		trailers := headers.NewHeaders()
+		bodyHash := sha256.Sum256(body)
+		trailers.Append("X-Content-Length", fmt.Sprintf("%d", len(body)))
+		trailers.Append("X-Content-SHA256", hex.EncodeToString(bodyHash[:]))
+		err = writer.WriteTrailers(trailers)
+		if err != nil {
+			fmt.Printf("error writing headers: %v\n", err)
+		}
+
+		return
 	}
 
 	_ = writer.WriteStatusLine(http.StatusNotFound)
@@ -122,8 +142,21 @@ func proxy_handler(writer *response.Writer, req *request.Request) {
 
 }
 
+func video_handler(writer *response.Writer, req *request.Request) {
+	currentWd, _ := os.Getwd()
+	videoPath := filepath.Join(currentWd + "/assets/vim.mp4")
+
+	videoFile, err := os.ReadFile(videoPath)
+	_ = writer.WriteStatusLine(http.StatusOK)
+	_ = writer.WriteHeaders(response.GetDefaultHeaders(len(videoFile), "video/mp4"))
+	if err != nil {
+		fmt.Printf("could not read video file: %v", err)
+	}
+	_, _ = writer.WriteBody([]byte(videoFile))
+}
+
 func main() {
-	server, err := server.Serve(port, proxy_handler)
+	server, err := server.Serve(port, video_handler)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

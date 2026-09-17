@@ -28,6 +28,7 @@ const (
 	statusLineDone
 	headersDone
 	bodyDone
+	trailersDone
 )
 
 type Writer struct {
@@ -86,6 +87,7 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	}
 
 	w.state = headersDone
+	headers.Clear()
 	return nil
 }
 
@@ -106,7 +108,7 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	chunk := []byte{}
 
 	chunk = fmt.Append(chunk, fmt.Sprintf("%x\r\n", len(p)))
-	chunk = fmt.Append(chunk, fmt.Sprintf("%s", p))
+	chunk = append(chunk, p...)
 	chunk = fmt.Append(chunk, "\r\n")
 	n, err := w.Writer.Write(chunk)
 	if err != nil {
@@ -117,10 +119,31 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	n, err := w.Writer.Write([]byte("0\r\n\r\n"))
+	n, err := w.Writer.Write([]byte("0\r\n"))
 	if err != nil {
 		return n, err
 	}
+	w.state = bodyDone
 	return n, nil
 
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.state != bodyDone {
+		return fmt.Errorf("attempting to write body in wrong order, writer state is: %v", w.state)
+	}
+	for k, v := range h {
+		fmt.Printf("header %s, with value %s\n", k, v)
+		_, err := fmt.Fprintf(w.Writer, "%s: %s\r\n", k, v)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprint(w.Writer, "\r\n")
+	if err != nil {
+		return err
+	}
+
+	w.state = trailersDone
+	return nil
 }
